@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, AlertTriangle, BookOpen, CheckCircle2, CircleGauge, ClipboardList, CloudOff, Menu, Plus, Radio, Shield, Siren, Wifi } from "lucide-react";
+import { Activity, AlertTriangle, BookOpen, CheckCircle2, CircleGauge, ClipboardList, CloudOff, Menu, Moon, Plus, Radio, Shield, Siren, Sun, Wifi } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import "./styles.css";
 import { regionContent, type BodyView } from "./bodyExplorer";
@@ -12,6 +12,7 @@ type Alert = { id: string; indicator: string; severity: string; title: string; e
 type Hazard = { id: string; title: string; summary: string; source: string; url: string };
 type Protocol = { id: string; title: string; category: string; version: string; status: string; applicability: string; content: string[]; simulated: boolean };
 type Incident = { id: string; category: string; affected_person: string; status: string; created_at: string; local_notification_status: string; ground_status: string };
+type Workflow = { incident: Incident; protocol: { title: string; version: string; status: string }; steps: { id: string; instruction: string; why: string; required: boolean; progress?: { status: string } }[]; offline: boolean; demonstration_only: boolean };
 type Section = "Home" | "Health Check" | "My Health" | "Health Guide" | "Emergency Help";
 
 const labels: Record<string, string> = { heart_rate: "Heart rate", blood_pressure: "Blood pressure", blood_glucose: "Blood glucose", temperature: "Temperature", sleep: "Sleep", mood: "Mood" };
@@ -41,6 +42,7 @@ function App() {
 
 function Workspace() {
   const [section, setSection] = useState<Section>("Home");
+  const [theme, setTheme] = useState<"dark" | "light">(() => localStorage.getItem("astravital-theme") === "light" ? "light" : "dark");
   const [selected, setSelected] = useState("heart_rate");
   const [observations, setObservations] = useState<Observation[]>([]);
   const [baselines, setBaselines] = useState<Baseline[]>([]);
@@ -66,6 +68,11 @@ function Workspace() {
   };
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("astravital-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
     refresh();
     const on = () => setOnline(true);
     const off = () => setOnline(false);
@@ -86,7 +93,7 @@ function Workspace() {
       <div className="sidebar-foot"><Shield size={16} />Research prototype<br /><span>Not a medical device</span></div>
     </aside>
     <main>
-      <header><div className="mobile-title"><Menu size={20} />AstraVital</div><div className="connection">{online ? <Wifi size={15} /> : <CloudOff size={15} />} {online ? "Connected" : "Offline"} {pending > 0 && <span className="pending">{pending} pending</span>}</div><button className="emergency-entry" onClick={() => setSection("Emergency Help")}><Siren size={15} /> Emergency</button><div className="profile"><div className="avatar">{authUser().display_name.slice(0, 2).toUpperCase()}</div><div><strong>{authUser().display_name}</strong><small>{authUser().email}</small></div></div><button className="logout" onClick={() => { localStorage.clear(); window.location.reload(); }}>Sign out</button></header>
+      <header><div className="mobile-title"><Menu size={20} />AstraVital</div><div className="connection">{online ? <Wifi size={15} /> : <CloudOff size={15} />} {online ? "Connected" : "Offline"} {pending > 0 && <span className="pending">{pending} pending</span>}</div><button className="theme-toggle" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>{theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}{theme === "dark" ? "Light mode" : "Dark mode"}</button><button className="emergency-entry" onClick={() => setSection("Emergency Help")}><Siren size={15} /> Emergency</button><div className="profile"><div className="avatar">{authUser().display_name.slice(0, 2).toUpperCase()}</div><div><strong>{authUser().display_name}</strong><small>{authUser().email}</small></div></div><button className="logout" onClick={() => { localStorage.clear(); window.location.reload(); }}>Sign out</button></header>
       <section className="content">
         {error && <div className="error">{error}</div>}
         {section === "Home" && <Dashboard observations={observations} baselines={baselines} alerts={alerts} setSelected={setSelected} onNavigate={setSection} />}
@@ -207,12 +214,16 @@ function EmergencyHelp() {
 function EmergencyCenter() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [message, setMessage] = useState("");
+  const [workflow, setWorkflow] = useState<Workflow | null>(null);
+  const [pendingCategory, setPendingCategory] = useState<string | null>(null);
   const load = () => get<Incident[]>("/emergency/incidents").then(setIncidents).catch(() => undefined);
   useEffect(() => { load(); }, []);
-  const openIncident = async (category: Incident["category"]) => {
-    try { await post("/emergency/incidents", { category, affected_person: "self", notes: "Initiated from local Emergency Response Center." }); setMessage("Incident recorded locally. No external notification is claimed."); load(); } catch { setMessage("Unable to record the incident locally."); }
+  const openIncident = async (category: string, affectedPerson = "self") => {
+    try { const result = await post<{ incident: Incident }>("/emergency/incidents", { category, affected_person: affectedPerson, notes: "Initiated from local Emergency Response Center." }); const next = await get<Workflow>(`/emergency/incidents/${result.incident.id}/workflow`); setPendingCategory(null); setWorkflow(next); setMessage("Incident recorded locally. Workflow progress is saved locally."); load(); } catch { setMessage("Unable to open the local emergency workflow."); }
   };
-  return <><div className="emergency-banner"><Siren size={24} /><div><strong>If you or another crew member may need urgent help, open an incident now.</strong><span>Follow applicable mission instructions and contact the designated medical role. This prototype only records locally.</span></div></div><section className="panel"><div className="panel-heading"><div><h2>Open emergency assistance</h2><p>Choose the closest concern. You can proceed when uncertain.</p></div></div><div className="emergency-actions">{[["self", "Medical emergency involving myself"], ["crew_member", "Medical emergency involving another crew member"], ["unexpected_concern", "New unexpected health concern"], ["sudden_change", "Sudden change in health status"], ["injury", "Injury or incident report"], ["medical_officer", "Request Crew Medical Officer assistance"], ["uncertain", "Other or uncertain medical concern"]].map(([key, title]) => <button key={key} onClick={() => openIncident(key as Incident["category"])}><Siren size={16} />{title}</button>)}</div>{message && <div className="success">{message}</div>}</section><section className="panel"><div className="panel-heading"><div><h2>Incident history</h2><p>Saved locally with explicit notification and ground status</p></div></div>{incidents.length ? incidents.map((incident) => <div className="incident-row" key={incident.id}><div><strong>{incident.category.replace("_", " ")}</strong><small>{new Date(incident.created_at).toLocaleString()} · {incident.status}</small></div><span className="status-pill">{incident.local_notification_status}</span><span className="status-pill muted-pill">{incident.ground_status}</span></div>) : <div className="empty short">No incidents recorded.</div>}</section></>;
+  const updateStep = async (stepId: string, status: "completed" | "cannot_complete" | "needs_assistance") => { if (!workflow) return; await post(`/emergency/incidents/${workflow.incident.id}/workflow/${stepId}`, { status }); if (status === "needs_assistance") await post("/communications/queue", { incident_id: workflow.incident.id, recipient_role: "crew_medical_officer", priority: "urgent" }); setWorkflow(await get<Workflow>(`/emergency/incidents/${workflow.incident.id}/workflow`)); };
+  const categories = [["difficulty-breathing", "Difficulty breathing"], ["chest-discomfort", "Chest pain or discomfort"], ["severe-injury", "Severe injury or physical incident"], ["bleeding", "Bleeding or wound concern"], ["fainting", "Fainting or loss of consciousness"], ["neurological", "Severe headache or neurological concern"], ["vision", "Eye or vision changes"], ["dizziness", "Dizziness or balance problems"], ["abdominal", "Abdominal or gastrointestinal discomfort"], ["fever", "Suspected infection or fever-related concern"], ["psychological", "Psychological or behavioural health concern"], ["environmental", "Possible environmental exposure"], ["uncertain", "I am not sure what is happening"]];
+  return <><div className="emergency-banner"><Siren size={24} /><div><strong>AstraVital Emergency Assistance</strong><span>Select a concern to open local guidance. This prototype contains demonstration-only, non-clinical workflow actions.</span></div></div>{workflow ? <section className="panel workflow-panel"><button className="secondary" onClick={() => setWorkflow(null)}>Back to concerns</button><div className="workflow-meta"><span className="protocol-status">DEMONSTRATION ONLY</span><strong>{workflow.protocol.title}</strong><small>Version {workflow.protocol.version} · {workflow.protocol.status} · Operating offline</small></div><div className="workflow-progress">Progress: {workflow.steps.filter((step) => step.progress?.status === "completed").length} of {workflow.steps.length} completed</div>{workflow.steps.map((step, index) => <article className={`workflow-step ${step.progress?.status === "completed" ? "complete" : ""}`} key={step.id}><small>STEP {index + 1} OF {workflow.steps.length}</small><h2>{step.instruction}</h2><p>{step.why}</p>{step.progress?.status ? <span className="status-pill">{step.progress.status.replace("_", " ")}</span> : <div className="step-actions"><button className="primary" onClick={() => updateStep(step.id, "completed")}>Mark completed</button><button className="secondary" onClick={() => updateStep(step.id, "needs_assistance")}>Request assistance</button><button className="secondary" onClick={() => updateStep(step.id, "cannot_complete")}>Cannot complete</button></div>}</article>)}</section> : <><section className="panel"><div className="panel-heading"><div><h2>{pendingCategory ? "Who is affected?" : "Open emergency assistance"}</h2><p>{pendingCategory ? "Choose the affected person before recording the incident." : "Choose the closest concern. You can proceed when uncertain."}</p></div></div>{pendingCategory ? <div className="emergency-actions"><button onClick={() => openIncident(pendingCategory, "self")}>Current astronaut</button><button onClick={() => openIncident(pendingCategory, "another crew member")}>Another crew member</button><button onClick={() => setPendingCategory(null)}>Back to concerns</button></div> : <div className="emergency-actions">{categories.map(([key, title]) => <button key={key} onClick={() => setPendingCategory(key)}><Siren size={16} />{title}</button>)}</div>}{message && <div className="success">{message}</div>}</section><section className="panel"><div className="panel-heading"><div><h2>Incident history</h2><p>Saved locally with explicit notification and ground status</p></div></div>{incidents.length ? incidents.map((incident) => <button className="incident-row incident-button" key={incident.id} onClick={() => get<Workflow>(`/emergency/incidents/${incident.id}/workflow`).then(setWorkflow)}><div><strong>{incident.category.replace("-", " ")}</strong><small>{new Date(incident.created_at).toLocaleString()} · {incident.status}</small></div><span className="status-pill">{incident.local_notification_status}</span><span className="status-pill muted-pill">{incident.ground_status}</span></button>) : <div className="empty short">No incidents recorded.</div>}</section></>}</>;
 }
 
 function ProtocolLibrary() {

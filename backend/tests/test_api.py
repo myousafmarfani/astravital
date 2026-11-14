@@ -92,11 +92,20 @@ def test_mission_modules_are_local_and_persistent():
     assert client.post(f"/api/v1/monitoring/schedule/{schedule.json()['id']}/complete").status_code == 200
 
     incident = client.post("/api/v1/emergency/incidents", json={
-        "category": "uncertain", "affected_person": "self",
+        "category": "chest-discomfort", "affected_person": "self",
     })
     assert incident.status_code == 201
     incident_id = incident.json()["incident"]["id"]
     assert client.get(f"/api/v1/emergency/incidents/{incident_id}").json()["incident"]["status"] == "opened"
+    workflow = client.get(f"/api/v1/emergency/incidents/{incident_id}/workflow")
+    assert workflow.status_code == 200
+    step_id = workflow.json()["steps"][0]["id"]
+    progress = client.post(
+        f"/api/v1/emergency/incidents/{incident_id}/workflow/{step_id}",
+        json={"status": "needs_assistance"},
+    )
+    assert progress.status_code == 200
+    assert client.get(f"/api/v1/emergency/incidents/{incident_id}/workflow").json()["steps"][0]["progress"]["status"] == "needs_assistance"
 
     queued = client.post("/api/v1/communications/queue", json={
         "recipient_role": "flight_surgeon", "priority": "urgent",

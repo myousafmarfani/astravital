@@ -113,6 +113,11 @@ def init_db() -> None:
                 id TEXT PRIMARY KEY, incident_id TEXT NOT NULL, event_type TEXT NOT NULL,
                 detail TEXT NOT NULL, created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS incident_step_progress (
+                incident_id TEXT NOT NULL, step_id TEXT NOT NULL, status TEXT NOT NULL,
+                completed_by TEXT NOT NULL, updated_at TEXT NOT NULL,
+                PRIMARY KEY (incident_id, step_id)
+            );
             CREATE TABLE IF NOT EXISTS communications_outbox (
                 id TEXT PRIMARY KEY, astronaut_id TEXT NOT NULL, incident_id TEXT,
                 recipient_role TEXT NOT NULL, priority TEXT NOT NULL, status TEXT NOT NULL,
@@ -188,7 +193,7 @@ class ScheduleCreate(BaseModel):
 
 
 class IncidentCreate(BaseModel):
-    category: Literal["self", "crew_member", "unexpected_concern", "sudden_change", "injury", "medical_officer", "uncertain"]
+    category: str = Field(min_length=2, max_length=80)
     affected_person: str = Field(default="self", max_length=120)
     notes: str | None = Field(default=None, max_length=1000)
 
@@ -567,6 +572,18 @@ def protocol(protocol_id: str) -> dict:
         return {**row_dict(row), "content": json.loads(row["content"])}
 
 
+def workflow_steps(content: list[str]) -> list[dict]:
+    return [
+        {
+            "id": f"step-{index}",
+            "instruction": instruction,
+            "why": "This demonstration step records the response context for qualified medical review.",
+            "required": True,
+        }
+        for index, instruction in enumerate(content, 1)
+    ]
+
+
 @app.post("/api/v1/emergency/incidents", status_code=201)
 def create_incident(payload: IncidentCreate, request: Request) -> dict:
     incident_id = str(uuid4())
@@ -608,6 +625,69 @@ def incident(request: Request, incident_id: str) -> dict:
             "SELECT * FROM incident_events WHERE incident_id = ? ORDER BY created_at", (incident_id,)
         )]
         return {"incident": row_dict(row), "timeline": events}
+
+
+@app.get("/api/v1/emergency/incidents/{incident_id}/workflow")
+def incident_workflow(request: Request, incident_id: str) -> dict:
+    with closing(get_db()) as db:
+        incident_row = db.execute(
+            "SELECT * FROM incidents WHERE id = ? AND astronaut_id = ?",
+            (incident_id, request.state.astronaut_id),
+        ).fetchone()
+        if not incident_row:
+            raise HTTPException(404, "Incident not found")
+        protocol_row = db.execute(
+            "SELECT * FROM protocols WHERE id = ?", (incident_row["protocol_id"],)
+        ).fetchone()
+        if not protocol_row:
+            raise HTTPException(409, "Required local protocol is unavailable")
+        steps = workflow_steps(json.loads(protocol_row["content"]))
+        progress = {
+            row["step_id"]: row_dict(row)
+            for row in db.execute(
+                "SELECT * FROM incident_step_progress WHERE incident_id = ?", (incident_id,)
+            )
+        }
+        return {
+            "incident": row_dict(incident_row),
+            "protocol": {**row_dict(protocol_row), "content": None},
+            "steps": [{**step, "progress": progress.get(step["id"])} for step in steps],
+            "offline": True,
+            "demonstration_only": bool(protocol_row["simulated"]),
+        }
+
+
+class IncidentStepUpdate(BaseModel):
+    status: Literal["completed", "cannot_complete", "needs_assistance"]
+
+
+@app.post("/api/v1/emergency/incidents/{incident_id}/workflow/{step_id}")
+def update_incident_step(
+    incident_id: str, step_id: str, payload: IncidentStepUpdate, request: Request
+) -> dict:
+    with closing(get_db()) as db:
+        incident_row = db.execute(
+            "SELECT id FROM incidents WHERE id = ? AND astronaut_id = ?",
+            (incident_id, request.state.astronaut_id),
+        ).fetchone()
+        if not incident_row:
+            raise HTTPException(404, "Incident not found")
+        updated_at = now_iso()
+        db.execute(
+            """INSERT INTO incident_step_progress
+            (incident_id, step_id, status, completed_by, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(incident_id, step_id) DO UPDATE SET
+              status = excluded.status, completed_by = excluded.completed_by,
+              updated_at = excluded.updated_at""",
+            (incident_id, step_id, payload.status, request.state.astronaut_id, updated_at),
+        )
+        db.execute(
+            "INSERT INTO incident_events VALUES (?, ?, ?, ?, ?)",
+            (str(uuid4()), incident_id, "workflow_step", f"{step_id}: {payload.status}", updated_at),
+        )
+        db.commit()
+        return {"incident_id": incident_id, "step_id": step_id, "status": payload.status, "updated_at": updated_at}
 
 
 @app.get("/api/v1/communications/outbox")
