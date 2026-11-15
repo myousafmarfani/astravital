@@ -272,7 +272,11 @@ def analyze(observation: dict, baseline: sqlite3.Row | None) -> dict | None:
 app = FastAPI(title="AstraVital API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://astravital.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

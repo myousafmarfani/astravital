@@ -32,6 +32,19 @@ def test_authenticated_preflight_is_allowed():
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
 
+def test_deployed_frontend_preflight_is_allowed():
+    response = client.options(
+        "/api/v1/auth/register",
+        headers={
+            "Origin": "https://astravital.vercel.app",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://astravital.vercel.app"
+
+
 def test_observation_generates_explainable_alert():
     client.post("/api/v1/baselines", json={
         "astronaut_id": auth["astronaut_id"], "indicator": "heart_rate", "value": 68, "unit": "bpm",
