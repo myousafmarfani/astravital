@@ -5,7 +5,7 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import "./styles.css";
 import { regionContent, type BodyView } from "./bodyExplorer";
 
-const API = "http://localhost:8000/api/v1";
+const API = "https://astravital-b9d1b0dd.fastapicloud.dev/api/v1";
 type Observation = { id: string; indicator: string; value: number; secondary_value?: number; unit: string; measured_at: string; source?: string; quality?: string; is_synthetic: boolean };
 type Baseline = { indicator: string; value: number; unit: string; verified?: boolean };
 type Alert = { id: string; indicator: string; severity: string; title: string; explanation: string; observed_value: string; baseline_value?: string; acknowledged: boolean };
