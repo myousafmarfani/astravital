@@ -31,6 +31,20 @@ uv run uvicorn app.main:app --reload
 
 API documentation: http://localhost:8000/docs
 
+### Deploy the backend with Docker
+
+Use `backend` as the Docker build context. The included image runs Uvicorn directly
+and uses the platform-provided `PORT` value when available:
+
+```powershell
+docker build -t astravital-api .\backend
+docker run --rm -p 8000:8000 astravital-api
+```
+
+For a container-based deployment, configure the service root/build context as
+`backend`. Do not use the FastAPI CLI as the start command; the image already
+starts `app.main:app` with Uvicorn.
+
 ### Frontend (PowerShell)
 
 ```powershell
