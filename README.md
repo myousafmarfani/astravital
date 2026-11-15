@@ -6,10 +6,6 @@ personal mission health workspace for recording observations, comparing them
 with individual references, reviewing explainable trend signals, and opening
 local emergency workflows.
 
-> **Safety notice:** AstraVital is a research and demonstration prototype. It
-> is not a medical device, a flight-qualified system, a diagnostic service, or
-> a substitute for qualified medical or flight-surgeon oversight. Its signals,
-> protocols, and thresholds must not be used as clinical advice.
 
 ## Live deployment
 
